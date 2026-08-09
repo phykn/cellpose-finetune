@@ -1,0 +1,7 @@
+dinov3
+numpy
+Pillow
+PyYAML
+scipy
+tifffile
+torch

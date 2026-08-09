@@ -1,0 +1,23 @@
+data:
+  image_dir: data/train/images
+  mask_dir: data/train/masks
+  channel_axis: null
+  crop_size: 384
+  augment: true
+  batch_size: 1
+  num_workers: 0
+
+model:
+  backbone: vitb16
+  backbone_weights: weights/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth
+  patch_stride: 8
+
+optim:
+  learning_rate: 0.00001
+  weight_decay: 0.1
+
+train:
+  total_steps: 10000
+  mixed_precision: true
+  save_every_steps: 500
+  resume: null
