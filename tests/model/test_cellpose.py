@@ -47,3 +47,9 @@ def test_model_rejects_non_vit16_encoder() -> None:
 
     with pytest.raises(ValueError, match="ViT/16"):
         CellposeDINO(encoder)
+
+
+@pytest.mark.parametrize("stride", [1, 3, 7, 15])
+def test_model_rejects_stride_that_cannot_restore_resolution(stride):
+    with pytest.raises(ValueError, match="even"):
+        CellposeDINO(FakeEncoder(), patch_stride=stride)

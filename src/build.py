@@ -3,18 +3,21 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from .dataset import CellposeDataset
+from .checkpoint import load_weights
+from .config import find_prediction_config, load_yaml
+from .data.dataset import CellposeDataset
 from .model.cellpose import CellposeDINO
 from .model.dinov3 import build_dinov3
-from .train.engine import BatchStream, Trainer
+from .train.checkpoint import load_checkpoint
 from .train.loss import CellposeLoss
-from .train.weights import load_checkpoint, load_weights
+from .train.trainer import BatchStream, Trainer
 
 
 def build_model(
     cfg: dict,
     weights: str | Path | None = None,
     load_backbone: bool = True,
+    initialize_classifier: bool = False,
 ) -> CellposeDINO:
     model_cfg = cfg["model"]
     backbone_weights = model_cfg.get("backbone_weights") if load_backbone else None
@@ -25,9 +28,33 @@ def build_model(
     model = CellposeDINO(
         encoder,
         patch_stride=model_cfg.get("patch_stride", 8),
+        num_classes=len(model_cfg.get("classes", [])),
     )
     if weights is not None:
-        load_weights(weights, model)
+        classes = model_cfg.get("classes", [])
+        try:
+            saved = load_yaml(find_prediction_config(weights))["model"]
+        except FileNotFoundError:
+            if classes and not initialize_classifier:
+                raise ValueError(
+                    "classification weights require their saved model.yaml."
+                ) from None
+        else:
+            saved_classes = saved.get("classes", [])
+            if saved_classes != classes and not (
+                initialize_classifier and not saved_classes
+            ):
+                raise ValueError(
+                    "model.classes differs from the saved class names/order."
+                )
+            for key, default in (("backbone", "vitb16"), ("patch_stride", 8)):
+                if saved.get(key, default) != model_cfg.get(key, default):
+                    raise ValueError(
+                        f"model.{key} differs from the saved configuration."
+                    )
+        load_weights(
+            weights, model, initialize_classifier=initialize_classifier, classes=classes
+        )
     return model
 
 
@@ -39,6 +66,8 @@ def build_dataset(cfg: dict) -> CellposeDataset:
         crop_size=data.get("crop_size", 384),
         channel_axis=data.get("channel_axis"),
         augment=data.get("augment", True),
+        label_dir=data.get("label_dir"),
+        classes=tuple(cfg["model"].get("classes", [])),
     )
 
 
@@ -68,22 +97,35 @@ def build_loader(cfg: dict, device: torch.device) -> DataLoader:
 def build_trainer(cfg: dict, device: torch.device) -> Trainer:
     train = cfg["train"]
     resume = train.get("resume")
-    model = build_model(cfg, load_backbone=resume is None).to(device)
+    weights = train.get("weights")
+    if resume is not None and weights is not None:
+        raise ValueError("use either resume or weights, not both.")
+    loader = build_loader(cfg, device)
+    model = build_model(
+        cfg,
+        weights=weights,
+        load_backbone=resume is None and weights is None,
+        initialize_classifier=weights is not None,
+    ).to(device)
     optim = cfg["optim"]
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=optim.get("learning_rate", 1e-5),
         weight_decay=optim.get("weight_decay", 0.1),
     )
-    start_step = 0
-    if resume is not None:
-        start_step = load_checkpoint(resume, model, optimizer, device=device)
-    return Trainer(
+    trainer = Trainer(
         model,
-        BatchStream(build_loader(cfg, device)),
+        BatchStream(loader),
         optimizer,
-        CellposeLoss(),
+        CellposeLoss(train.get("class_loss_weight", 1.0)),
         device,
         mixed_precision=train.get("mixed_precision", True),
-        start_step=start_step,
+        cfg=cfg,
     )
+    if resume is not None:
+        trainer.step_idx = load_checkpoint(
+            resume, model, optimizer, device=device, scaler=trainer.scaler, cfg=cfg
+        )
+        cfg["optim"]["learning_rate"] = optimizer.param_groups[0]["lr"]
+        cfg["optim"]["weight_decay"] = optimizer.param_groups[0]["weight_decay"]
+    return trainer

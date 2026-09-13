@@ -2,8 +2,9 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.train.engine import BatchStream, Trainer
-from src.train.weights import load_checkpoint, load_weights
+from src.checkpoint import load_weights
+from src.train.checkpoint import load_checkpoint
+from src.train.trainer import BatchStream, Trainer
 
 
 def make_trainer() -> tuple[Trainer, nn.Module, torch.optim.Optimizer]:
@@ -48,3 +49,11 @@ def test_trainer_runs_and_round_trips_checkpoint(tmp_path) -> None:
     )
     assert step == 2
     assert restored_trainer.step_idx == 0
+
+
+def test_completed_resume_still_exports_weights(tmp_path):
+    trainer, _, _ = make_trainer()
+    trainer.step_idx = 2
+    trainer.fit(steps=2, save_every=1, run_dir=tmp_path)
+    assert (tmp_path / "model.pt").is_file()
+    assert (tmp_path / "checkpoint.pt").is_file()

@@ -9,6 +9,7 @@ __pycache__/
 /data/
 /run/
 /weights/
+/config/local.yaml
 
 .DS_Store
 Thumbs.db

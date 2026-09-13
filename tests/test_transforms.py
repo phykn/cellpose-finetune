@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from src.transforms import normalize_image
+from src.prepare.convert import normalize_image
 
 
 def test_grayscale_image_is_normalized_without_clipping() -> None:

@@ -33,12 +33,12 @@ def test_make_run_dir_avoids_existing_name(monkeypatch, tmp_path) -> None:
             return self
 
         def strftime(self, pattern: str) -> str:
-            assert pattern == "%m%d%H%M"
-            return "08091234"
+            assert pattern == "%Y%m%d-%H%M%S"
+            return "20260913-123456"
 
     monkeypatch.setattr("run_train.datetime", FixedDateTime)
-    (tmp_path / "08091234").mkdir()
+    (tmp_path / "20260913-123456").mkdir()
 
     path = make_run_dir(Path(tmp_path))
 
-    assert path == tmp_path / "0809123402"
+    assert path == tmp_path / "20260913-12345602"

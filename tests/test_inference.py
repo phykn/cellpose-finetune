@@ -3,8 +3,9 @@ import pytest
 import torch
 from torch import nn
 
-from src import inference
-from src.inference import Prediction, predict, run_tiled
+from src.predict import inference
+from src.predict.inference import Prediction, predict
+from src.predict.tile import run_tiled
 
 
 class PointwiseModel(nn.Module):
@@ -42,6 +43,9 @@ def test_tiled_pointwise_model_matches_full_image_for_any_shape(
 def test_tiled_inference_preserves_input_and_parameter_gradients() -> None:
     model = PointwiseModel()
     image = torch.randn(1, 3, 41, 57, requires_grad=True)
+    expected = torch.autograd.grad(
+        model(image).square().mean(), (image, model.conv.weight)
+    )
 
     output = run_tiled(model, image, tile_size=32, overlap=0.25)
     output.square().mean().backward()
@@ -51,6 +55,29 @@ def test_tiled_inference_preserves_input_and_parameter_gradients() -> None:
     assert bool(torch.isfinite(image.grad).all())
     assert model.conv.weight.grad is not None
     assert bool(torch.isfinite(model.conv.weight.grad).all())
+    torch.testing.assert_close(image.grad, expected[0])
+    torch.testing.assert_close(model.conv.weight.grad, expected[1])
+
+
+def test_tiled_half_precision_does_not_overflow_overlap_sum() -> None:
+    class LargeOutput(nn.Module):
+        def forward(self, image):
+            return torch.full_like(image, 60000, dtype=torch.float16)
+
+    actual = run_tiled(LargeOutput(), torch.zeros(1, 3, 80, 80), 32, overlap=0.75)
+    assert actual.dtype == torch.float32
+    torch.testing.assert_close(actual, torch.full_like(actual, 60000))
+
+
+def test_tiles_follow_model_patch_stride_for_odd_image_sizes() -> None:
+    class StridedPointwise(PointwiseModel):
+        patch_stride = 16
+
+    model = StridedPointwise()
+    image = torch.randn(1, 3, 35, 53)
+    torch.testing.assert_close(run_tiled(model, image, 32), model(image))
+    with pytest.raises(ValueError, match="patch_stride"):
+        run_tiled(model, image, 24)
 
 
 @pytest.mark.parametrize("tile_size", (8, 18, 385, True))

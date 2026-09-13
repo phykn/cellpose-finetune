@@ -1,6 +1,7 @@
 from importlib import import_module
 from pathlib import Path
 
+import torch
 from torch import nn
 
 DINO_VIT_BACKBONES = (
@@ -43,4 +44,10 @@ def build_dinov3(
     path = Path(weights).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(f"DINOv3 backbone weights do not exist: {path}")
-    return builder(pretrained=True, weights=str(path))
+    # The hub loader caches by basename, so different local files with the same
+    # name can otherwise silently load an earlier cached checkpoint.
+    encoder = builder(pretrained=False)
+    encoder.load_state_dict(
+        torch.load(path, map_location="cpu", weights_only=True), strict=True
+    )
+    return encoder

@@ -12,8 +12,15 @@ class CellposeDINO(nn.Module):
         self,
         encoder: nn.Module,
         patch_stride: int = MODEL_STRIDE,
+        num_classes: int = 0,
     ) -> None:
         super().__init__()
+        if (
+            not isinstance(num_classes, int)
+            or isinstance(num_classes, bool)
+            or num_classes < 0
+        ):
+            raise ValueError("num_classes must be a non-negative integer.")
         if not isinstance(patch_stride, int) or isinstance(patch_stride, bool):
             raise TypeError("patch_stride must be an integer.")
         if patch_stride <= 0:
@@ -29,6 +36,10 @@ class CellposeDINO(nn.Module):
             raise ValueError("only DINOv3 ViT/16 encoders are supported.")
         if patch_stride > projection.kernel_size[0]:
             raise ValueError("patch_stride must not exceed the patch size.")
+        if patch_stride % 2:
+            raise ValueError(
+                "patch_stride must be even to restore the input resolution."
+            )
 
         projection.stride = (patch_stride, patch_stride)
         padding = (projection.kernel_size[0] - patch_stride) // 2
@@ -43,6 +54,9 @@ class CellposeDINO(nn.Module):
 
         self.encoder = encoder
         self.output = nn.Linear(channels, 3 * patch_stride**2)
+        self.num_classes = num_classes
+        if num_classes:
+            self.class_output = nn.Linear(channels, num_classes * patch_stride**2)
         self.patch_stride = patch_stride
 
     def forward(self, image: torch.Tensor) -> torch.Tensor:
@@ -65,11 +79,13 @@ class CellposeDINO(nn.Module):
             )
 
         output = self.output(tokens)
+        if self.num_classes:
+            output = torch.cat((output, self.class_output(tokens)), dim=-1)
         output = output.reshape(
             image.shape[0],
             grid_height,
             grid_width,
-            3 * self.patch_stride**2,
+            (3 + self.num_classes) * self.patch_stride**2,
         )
         output = output.permute(0, 3, 1, 2).contiguous()
         output = F.pixel_shuffle(output, self.patch_stride)

@@ -1,7 +1,8 @@
+# Temporary image/mask/JSON triples. Replace these example class names with yours.
 data:
   image_dir: data/train/images
   mask_dir: data/train/masks
-  label_dir: null # Set to data/train/labels to train instance classes.
+  label_dir: data/train/labels
   channel_axis: null
   crop_size: 384
   augment: true
@@ -12,7 +13,7 @@ model:
   backbone: vitb16
   backbone_weights: weights/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth
   patch_stride: 8
-  classes: [] # Ordered names, e.g. [type_A, type_B]; empty keeps segmentation only.
+  classes: [type_A, type_B]
 
 optim:
   learning_rate: 0.00001
@@ -24,7 +25,7 @@ train:
   mixed_precision: true
   save_every_steps: 500
   resume: null
-  weights: null # Optional plain model.pt initialization; mutually exclusive with resume.
+  weights: null
   class_loss_weight: 1.0
 
 predict:

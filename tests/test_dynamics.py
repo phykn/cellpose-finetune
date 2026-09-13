@@ -2,12 +2,8 @@ import numpy as np
 import pytest
 
 from src import FLOW_SCALE
-from src.dynamics import (
-    compute_masks,
-    flow_targets,
-    follow_flows,
-    masks_to_flows,
-)
+from src.predict.dynamics import compute_masks, follow_flows
+from src.prepare.flow import flow_targets, masks_to_flows
 
 
 def disk(

@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 import torch
 
-from src.dataset import CellposeDataset, find_pairs, read_array, write_mask
+from src.data.dataset import CellposeDataset
+from src.data.image import find_pairs, read_array, write_mask
 
 
 def test_dataset_returns_image_and_flow_target(tmp_path) -> None:

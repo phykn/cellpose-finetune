@@ -1,10 +1,13 @@
+import json
 from pathlib import Path
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from .weights import save_checkpoint, save_weights
+from ..checkpoint import save_weights
+from ..config import save_yaml
+from .checkpoint import save_checkpoint
 
 
 class BatchStream:
@@ -32,6 +35,7 @@ class Trainer:
         device: torch.device,
         mixed_precision: bool = True,
         start_step: int = 0,
+        cfg: dict | None = None,
     ) -> None:
         if not isinstance(mixed_precision, bool):
             raise TypeError("mixed_precision must be a boolean.")
@@ -47,6 +51,7 @@ class Trainer:
         self.amp_enabled = mixed_precision and device.type == "cuda"
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.amp_enabled)
         self.step_idx = start_step
+        self.cfg = cfg
 
     def fit(self, steps: int, save_every: int, run_dir: str | Path) -> None:
         if not isinstance(steps, int) or isinstance(steps, bool) or steps <= 0:
@@ -60,9 +65,14 @@ class Trainer:
 
         run_dir = Path(run_dir)
         run_dir.mkdir(parents=True, exist_ok=True)
+        if self.step_idx == steps:
+            self.save(run_dir)
+            return
         while self.step_idx < steps:
             loss = self.step()
             self.step_idx += 1
+            with (run_dir / "metrics.jsonl").open("a", encoding="utf-8") as file:
+                file.write(json.dumps({"step": self.step_idx, "loss": loss}) + "\n")
             if self.step_idx % save_every == 0 or self.step_idx == steps:
                 self.save(run_dir)
                 print(f"step={self.step_idx} loss={loss:.6f}")
@@ -87,9 +97,24 @@ class Trainer:
 
     def save(self, run_dir: Path) -> None:
         save_weights(run_dir / "model.pt", self.model)
+        if self.cfg is not None:
+            save_yaml(
+                run_dir / "model.yaml",
+                {
+                    "format_version": 2 if self.cfg["model"].get("classes") else 1,
+                    "model": {**self.cfg["model"], "backbone_weights": None},
+                    "data": {
+                        "channel_axis": self.cfg["data"]["channel_axis"],
+                        "crop_size": self.cfg["data"]["crop_size"],
+                    },
+                    "predict": self.cfg["predict"],
+                },
+            )
         save_checkpoint(
             run_dir / "checkpoint.pt",
             self.model,
             self.optimizer,
             self.step_idx,
+            scaler=self.scaler,
+            cfg=self.cfg,
         )
